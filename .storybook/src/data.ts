@@ -1,4 +1,15 @@
-import { poslog, cementData, holeSizeData, casingData, surfaces, completion, stratColumns, picks, seismic } from './esv-intersection-data';
+import {
+  poslog,
+  cementData,
+  holeSizeData,
+  casingData,
+  surfaces,
+  completion,
+  stratColumns,
+  picks,
+  seismic,
+  cementSqueezes,
+} from './esv-intersection-data';
 
 export const getWellborePath = (): Promise<any> => {
   const coords = poslog.map((c: any) => [c.easting, c.northing, c.tvd]);
@@ -10,8 +21,7 @@ export const getPositionLog = (): Promise<any> => {
 };
 
 export const getCompletion = (): Promise<any[]> => {
-  const compl = completion.map((c: any) => ({ start: c.mdTop, end: c.mdBottom, diameter: c.odMax }));
-  return Promise.resolve(compl);
+  return Promise.resolve(completion);
 };
 
 export const getSurfaces = (): Promise<any[]> => {
@@ -40,7 +50,11 @@ export const getCement = (): Promise<any[]> => {
 
 export const getPicks = (): Promise<any[]> => {
   return Promise.resolve(picks);
-}
+};
+
+export const getCementSqueezes = (): Promise<any[]> => {
+  return Promise.resolve(cementSqueezes);
+};
 
 // Nothing for mock
 export const fetchData = async (fileName: string) => {};

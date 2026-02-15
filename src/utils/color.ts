@@ -1,13 +1,19 @@
-import { color, Color } from 'd3-color';
+import { color } from 'd3-color';
 
+const RADIX_SIXTEEN = 16;
+const HEX_STRING_LENGTH = 6;
 /**
  * Convert color string to number
  */
 export function convertColor(colorStr: string): number {
-  const c: Color = color(colorStr);
-  const d: string = c.hex();
-  const n: number = parseInt(d.replace('#', '0x'));
-  return n;
+  const c = color(colorStr);
+  if (c != null) {
+    const d: string = c?.formatHex();
+    const n: number = parseInt(d.replace('#', '0x'));
+    return n;
+  } else {
+    throw Error(`Could not format string ${colorStr} to hex code.`);
+  }
 }
 
 export function colorToCSSColor(color: number | string): string {
@@ -15,7 +21,6 @@ export function colorToCSSColor(color: number | string): string {
     return color;
   }
 
-  let hexString = color.toString(16);
-  hexString = '000000'.substr(0, 6 - hexString.length) + hexString;
-  return `#${hexString}`;
+  const colorHexString = color.toString(RADIX_SIXTEEN);
+  return `#${colorHexString.padStart(HEX_STRING_LENGTH, '0')}`;
 }

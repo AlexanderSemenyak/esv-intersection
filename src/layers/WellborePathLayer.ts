@@ -1,4 +1,3 @@
-/* eslint-disable no-magic-numbers */
 import {
   line,
   curveCatmullRom,
@@ -15,12 +14,24 @@ import {
   curveStepBefore,
 } from 'd3-shape';
 import { SVGLayer } from './base/SVGLayer';
-import { WellborepathLayerOptions, OnUpdateEvent, OnRescaleEvent } from '../interfaces';
+import { OnUpdateEvent, OnRescaleEvent } from '../interfaces';
+import { LayerOptions } from '..';
 
-export class WellborepathLayer extends SVGLayer {
-  rescaleEvent: OnRescaleEvent;
+const CURVE_CATMULL_ROM_ALPHA = 0.7;
+const CURVE_CARDINAL_TENSION = 0.9;
+const CURVE_BUNDLE_BETA = 1.0;
 
-  constructor(id?: string, options?: WellborepathLayerOptions) {
+export interface WellborepathLayerOptions<T extends [number, number][]> extends LayerOptions<T> {
+  stroke: string;
+  strokeWidth: string;
+  curveType?: string;
+  tension?: number;
+}
+
+export class WellborepathLayer<T extends [number, number][]> extends SVGLayer<T> {
+  rescaleEvent: OnRescaleEvent | undefined;
+
+  constructor(id?: string, options?: WellborepathLayerOptions<T>) {
     super(id, options);
     this.options = {
       ...this.options,
@@ -29,12 +40,12 @@ export class WellborepathLayer extends SVGLayer {
     this.render = this.render.bind(this);
   }
 
-  onUpdate(event: OnUpdateEvent): void {
+  override onUpdate(event: OnUpdateEvent<T>): void {
     super.onUpdate(event);
     this.render();
   }
 
-  onRescale(event: OnRescaleEvent): void {
+  override onRescale(event: OnRescaleEvent): void {
     super.onRescale(event);
     if (!this.elm) {
       return;
@@ -44,7 +55,7 @@ export class WellborepathLayer extends SVGLayer {
   }
 
   render(): void {
-    const { strokeWidth, stroke } = this.options as WellborepathLayerOptions;
+    const { strokeWidth, stroke } = this.options as WellborepathLayerOptions<T>;
 
     if (!this.elm) {
       return;
@@ -67,52 +78,54 @@ export class WellborepathLayer extends SVGLayer {
   }
 
   private renderWellborePath(data: [number, number][]): string {
-    const { xScale, yScale } = this.rescaleEvent;
-    const transformedData: [number, number][] = data.map((d) => [xScale(d[0]), yScale(d[1])]);
+    if (this.rescaleEvent != null) {
+      const { xScale, yScale } = this.rescaleEvent;
+      const transformedData: [number, number][] = data.map((d) => [xScale(d[0]), yScale(d[1])]);
 
-    // TODO: Might be a good idea to move something like this to a shared function in a base class
-    let curveFactory;
-    const { curveType, tension } = this.options as WellborepathLayerOptions;
-    switch (curveType) {
-      default:
-      case 'curveCatmullRom':
-        curveFactory = curveCatmullRom.alpha(tension || 0.7);
-        break;
-      case 'curveLinear':
-        curveFactory = curveLinear;
-        break;
-      case 'curveBasis':
-        curveFactory = curveBasis;
-        break;
-      case 'curveBasisClosed':
-        curveFactory = curveBasisClosed;
-        break;
-      case 'curveBundle':
-        curveFactory = curveBundle.beta(tension || 1.0);
-        break;
-      case 'curveCardinal':
-        curveFactory = curveCardinal.tension(tension || 0.9);
-        break;
-      case 'curveMonotoneX':
-        curveFactory = curveMonotoneX;
-        break;
-      case 'curveMonotoneY':
-        curveFactory = curveMonotoneY;
-        break;
-      case 'curveNatural':
-        curveFactory = curveNatural;
-        break;
-      case 'curveStep':
-        curveFactory = curveStep;
-        break;
-      case 'curveStepAfter':
-        curveFactory = curveStepAfter;
-        break;
-      case 'curveStepBefore':
-        curveFactory = curveStepBefore;
-        break;
+      // TODO: Might be a good idea to move something like this to a shared function in a base class
+      let curveFactory;
+      const { curveType, tension } = this.options as WellborepathLayerOptions<T>;
+      switch (curveType) {
+        default:
+        case 'curveCatmullRom':
+          curveFactory = curveCatmullRom.alpha(tension || CURVE_CATMULL_ROM_ALPHA);
+          break;
+        case 'curveLinear':
+          curveFactory = curveLinear;
+          break;
+        case 'curveBasis':
+          curveFactory = curveBasis;
+          break;
+        case 'curveBasisClosed':
+          curveFactory = curveBasisClosed;
+          break;
+        case 'curveBundle':
+          curveFactory = curveBundle.beta(tension || CURVE_BUNDLE_BETA);
+          break;
+        case 'curveCardinal':
+          curveFactory = curveCardinal.tension(tension || CURVE_CARDINAL_TENSION);
+          break;
+        case 'curveMonotoneX':
+          curveFactory = curveMonotoneX;
+          break;
+        case 'curveMonotoneY':
+          curveFactory = curveMonotoneY;
+          break;
+        case 'curveNatural':
+          curveFactory = curveNatural;
+          break;
+        case 'curveStep':
+          curveFactory = curveStep;
+          break;
+        case 'curveStepAfter':
+          curveFactory = curveStepAfter;
+          break;
+        case 'curveStepBefore':
+          curveFactory = curveStepBefore;
+          break;
+      }
+      return line().curve(curveFactory)(transformedData) ?? '';
     }
-
-    return line().curve(curveFactory)(transformedData);
+    return '';
   }
 }

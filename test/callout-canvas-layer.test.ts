@@ -1,5 +1,6 @@
-import createMockRaf from 'mock-raf';
+import { describe, expect, it, beforeEach, afterEach, vi, MockInstance } from 'vitest';
 import { CanvasRenderingContext2DEvent } from 'jest-canvas-mock';
+import createMockRaf from 'mock-raf';
 import { CalloutCanvasLayer, IntersectionReferenceSystem } from '../src/index';
 import { rescaleEventStub } from './test-helpers';
 
@@ -14,11 +15,11 @@ describe('CalloutCanvasLayer', () => {
 
   const mockRaf = createMockRaf();
 
-  let mockRequestAnimationFrame: any;
+  let mockRequestAnimationFrame: MockInstance<(callback: FrameRequestCallback) => number>;
 
   beforeEach(() => {
     elm = document.createElement('div');
-    mockRequestAnimationFrame = jest.spyOn(window, 'requestAnimationFrame');
+    mockRequestAnimationFrame = vi.spyOn(window, 'requestAnimationFrame');
     mockRequestAnimationFrame.mockImplementation(mockRaf.raf);
   });
 
@@ -42,18 +43,18 @@ describe('CalloutCanvasLayer', () => {
       const referenceSystem = new IntersectionReferenceSystem(wp);
       const layer = new CalloutCanvasLayer('calloutcanvaslayer', { referenceSystem });
       layer.onMount({ elm });
-      layer.onUpdate({});
-      layer.onRescale(rescaleEventStub(data));
+      layer.onUpdate({ data });
+      layer.onRescale(rescaleEventStub());
 
-      layer.ctx.__clearEvents();
+      layer.ctx?.__clearEvents();
 
       // Act
       layer.data = data;
       mockRaf.step();
 
       // Assert
-      const events: CanvasRenderingContext2DEvent[] = layer.ctx.__getEvents();
-      const fillTextCalls = events.filter((call: any) => call.type === 'fillText');
+      const events: CanvasRenderingContext2DEvent[] = layer.ctx?.__getEvents() ?? [];
+      const fillTextCalls = events.filter((call: CanvasRenderingContext2DEvent) => call.type === 'fillText');
       expect(fillTextCalls.length).toBeGreaterThanOrEqual(1);
     });
 
@@ -63,18 +64,18 @@ describe('CalloutCanvasLayer', () => {
       const referenceSystem = new IntersectionReferenceSystem(wp);
       layer.referenceSystem = referenceSystem;
       layer.onMount({ elm });
-      layer.onUpdate({});
-      layer.onRescale(rescaleEventStub(data));
+      layer.onUpdate({ data });
+      layer.onRescale(rescaleEventStub());
 
-      layer.ctx.__clearEvents();
+      layer.ctx?.__clearEvents();
 
       // Act
       layer.data = data;
       mockRaf.step();
 
       // Assert
-      const events: CanvasRenderingContext2DEvent[] = layer.ctx.__getEvents();
-      const fillTextCalls = events.filter((call: any) => call.type === 'fillText');
+      const events: CanvasRenderingContext2DEvent[] = layer.ctx?.__getEvents() ?? [];
+      const fillTextCalls = events.filter((call: CanvasRenderingContext2DEvent) => call.type === 'fillText');
       expect(fillTextCalls.length).toBeGreaterThanOrEqual(1);
     });
 
@@ -82,10 +83,10 @@ describe('CalloutCanvasLayer', () => {
       // Arrange
       const layer = new CalloutCanvasLayer('calloutcanvaslayer', {});
       layer.onMount({ elm });
-      layer.onUpdate({});
-      layer.onRescale(rescaleEventStub(data));
+      layer.onUpdate({ data });
+      layer.onRescale(rescaleEventStub());
 
-      layer.ctx.__clearEvents();
+      layer.ctx?.__clearEvents();
 
       // Act
       // Assert

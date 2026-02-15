@@ -1,59 +1,60 @@
 import { Graphics } from 'pixi.js';
 import { PixiLayer } from './base/PixiLayer';
-import { OnRescaleEvent, OnUpdateEvent } from '../interfaces';
+import { OnUpdateEvent, OnRescaleEvent } from '../interfaces';
 import { SurfaceArea, SurfaceData, SurfaceLine } from '../datautils';
 import { SURFACE_LINE_WIDTH } from '../constants';
 
-export class GeomodelLayerV2 extends PixiLayer {
-  private isRendered: boolean = false;
+const DEFAULT_Y_BOTTOM = 10000;
 
-  onRescale(event: OnRescaleEvent): void {
+export class GeomodelLayerV2<T extends SurfaceData> extends PixiLayer<T> {
+  private isPreRendered = false;
+
+  override onRescale(event: OnRescaleEvent): void {
     super.onRescale(event);
 
-    if (!this.isRendered) {
-      this.render();
+    if (!this.isPreRendered) {
+      this.clearLayer();
+      this.preRender();
     }
-  }
 
-  onUpdate(event: OnUpdateEvent): void {
-    super.onUpdate(event);
-
-    this.isRendered = false;
-    this.cleanUpStage();
     this.render();
   }
 
-  cleanUpStage(): void {
-    this.ctx.stage.children.forEach((g: Graphics) => g.destroy());
-    this.ctx.stage.removeChildren();
+  override onUpdate(event: OnUpdateEvent<T>): void {
+    super.onUpdate(event);
+
+    this.isPreRendered = false;
+    this.clearLayer();
+    this.preRender();
+    this.render();
   }
 
-  render(): void {
-    const { data }: { data: SurfaceData } = this;
+  preRender(): void {
+    const { data } = this;
 
     if (!data) {
       return;
     }
 
-    data.areas.forEach((a: SurfaceArea) => this.generateAreaPolygon(a));
-    data.lines.forEach((l: SurfaceLine) => this.generateSurfaceLine(l));
+    data.areas.forEach((a) => this.generateAreaPolygon(a));
+    data.lines.forEach((l) => this.generateSurfaceLine(l));
 
-    this.isRendered = true;
+    this.isPreRendered = true;
   }
 
-  createPolygons = (data: any): number[][] => {
+  createPolygons = (data: number[][]): number[][] => {
     const polygons: number[][] = [];
-    let polygon: number[] = null;
+    let polygon: number[] | undefined;
 
     // Start generating polygons
     for (let i = 0; i < data.length; i++) {
       // Generate top of polygon as long as we have valid values
-      const topIsValid = !!data[i][1];
+      const topIsValid = !!data[i]?.[1];
       if (topIsValid) {
-        if (polygon === null) {
+        if (polygon == null) {
           polygon = [];
         }
-        polygon.push(data[i][0], data[i][1]);
+        polygon.push(data[i]?.[0]!, data[i]?.[1]!);
       }
 
       const endIsReached = i === data.length - 1;
@@ -61,11 +62,13 @@ export class GeomodelLayerV2 extends PixiLayer {
         if (polygon) {
           // Generate bottom of polygon
           for (let j: number = !topIsValid ? i - 1 : i; j >= 0; j--) {
-            if (!data[j][1]) break;
-            polygon.push(data[j][0], data[j][2] || 10000);
+            if (!data[j]?.[1]) {
+              break;
+            }
+            polygon.push(data[j]?.[0]!, data[j]?.[2] || DEFAULT_Y_BOTTOM);
           }
           polygons.push(polygon);
-          polygon = null;
+          polygon = undefined;
         }
       }
     }
@@ -77,9 +80,9 @@ export class GeomodelLayerV2 extends PixiLayer {
     g.lineStyle(1, s.color as number, 1);
     g.beginFill(s.color as number);
     const polygons = this.createPolygons(s.data);
-    polygons.forEach((polygon: any) => g.drawPolygon(polygon));
+    polygons.forEach((polygon: number[]) => g.drawPolygon(polygon));
     g.endFill();
-    this.ctx.stage.addChild(g);
+    this.addChild(g);
   };
 
   generateSurfaceLine = (s: SurfaceLine): void => {
@@ -91,17 +94,18 @@ export class GeomodelLayerV2 extends PixiLayer {
 
     let penDown = false;
     for (let i = 0; i < d.length; i++) {
-      if (d[i][1]) {
+      const lineData = d[i];
+      if (lineData && lineData[1] && lineData[0]) {
         if (penDown) {
-          g.lineTo(d[i][0], d[i][1]);
+          g.lineTo(lineData[0], lineData[1]);
         } else {
-          g.moveTo(d[i][0], d[i][1]);
+          g.moveTo(lineData[0], lineData[1]);
           penDown = true;
         }
       } else {
         penDown = false;
       }
     }
-    this.ctx.stage.addChild(g);
+    this.addChild(g);
   };
 }

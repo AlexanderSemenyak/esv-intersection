@@ -13,30 +13,30 @@ export interface ControllerOptions {
   axisOptions?: AxisOptions;
   scaleOptions?: ScaleOptions;
   referenceSystem?: IntersectionReferenceSystem;
-  layers?: Layer[];
+  layers?: Layer<unknown>[];
   path?: number[][];
 }
 
-interface OverlayEvent {
-  target?: Element;
-  source: Element;
-  caller: any;
+interface OverlayEvent<T> {
+  target: Element | undefined;
+  source: Element | undefined;
+  caller: T;
 }
 
-export interface OverlayResizeEvent extends OverlayEvent {
+export interface OverlayResizeEvent<T> extends OverlayEvent<T> {
   width: number;
   height: number;
 }
 
-export interface OverlayMouseMoveEvent extends OverlayEvent {
+export interface OverlayMouseMoveEvent<T> extends OverlayEvent<T> {
   x: number;
   y: number;
 }
 
-export interface OverlayMouseExitEvent extends OverlayEvent {}
+export type OverlayMouseExitEvent<T> = OverlayEvent<T>;
 
-export interface OverlayCallbacks {
-  onMouseMove?(event: OverlayMouseMoveEvent): void;
-  onMouseExit?(event: OverlayMouseExitEvent): void;
-  onResize?(event: OverlayResizeEvent): void;
+export interface OverlayCallbacks<T> {
+  onMouseMove?(event: OverlayMouseMoveEvent<T>): void;
+  onMouseExit?(event: OverlayMouseExitEvent<T>): void;
+  onResize?(event: OverlayResizeEvent<T>): void;
 }

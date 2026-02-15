@@ -1,11 +1,13 @@
 import { CanvasLayer } from './base/CanvasLayer';
-import { GridLayerOptions, OnUpdateEvent, OnRescaleEvent } from '../interfaces';
+import { OnUpdateEvent, OnRescaleEvent } from '../interfaces';
+import { ScaleLinear } from 'd3-scale';
+import { LayerOptions } from './base/Layer';
 
 // constants
-const MINORCOLOR: string = 'lightgray';
-const MAJORCOLOR: string = 'gray';
-const MINORWIDTH: number = 0.25;
-const MAJORWIDTH: number = 0.75;
+const MINORCOLOR = 'lightgray';
+const MAJORCOLOR = 'gray';
+const MINORWIDTH = 0.25;
+const MAJORWIDTH = 0.75;
 
 const defaultOptions = {
   minorColor: MINORCOLOR,
@@ -14,11 +16,23 @@ const defaultOptions = {
   majorWidth: MAJORWIDTH,
 };
 
-export class GridLayer extends CanvasLayer {
-  private _offsetX: number = 0;
-  private _offsetY: number = 0;
+export interface GridLayerOptions<T> extends LayerOptions<T> {
+  majorWidth?: number;
+  majorColor?: string;
+  minorWidth?: number;
+  minorColor?: string;
+}
 
-  constructor(id?: string, options?: GridLayerOptions) {
+export interface OnGridLayerUpdateEvent<T> extends OnUpdateEvent<T> {
+  xScale?: ScaleLinear<number, number, never>;
+  yScale?: ScaleLinear<number, number, never>;
+}
+
+export class GridLayer<T> extends CanvasLayer<T> {
+  private _offsetX = 0;
+  private _offsetY = 0;
+
+  constructor(id?: string, options?: GridLayerOptions<T>) {
     super(id, options);
     this.options = {
       ...this.options,
@@ -27,19 +41,19 @@ export class GridLayer extends CanvasLayer {
     this.render = this.render.bind(this);
   }
 
-  onUpdate(event: OnUpdateEvent): void {
+  override onUpdate(event: OnGridLayerUpdateEvent<T>): void {
     super.onUpdate(event);
     this.render(event);
   }
 
-  onRescale(event: OnRescaleEvent): void {
+  override onRescale(event: OnRescaleEvent): void {
     super.onRescale(event);
     this.render(event);
   }
 
-  render(event: OnRescaleEvent | OnUpdateEvent): void {
+  render(event: OnRescaleEvent | OnGridLayerUpdateEvent<T>): void {
     const { ctx } = this;
-    const { minorWidth, minorColor, majorWidth, majorColor } = this.options as GridLayerOptions;
+    const { minorWidth, minorColor, majorWidth, majorColor } = this.options as GridLayerOptions<T>;
 
     if (!ctx) {
       return;
@@ -51,11 +65,11 @@ export class GridLayer extends CanvasLayer {
       return;
     }
 
-    const xScale = event.xScale.copy();
-    const yScale = event.yScale.copy();
+    const xScale = event.xScale!.copy();
+    const yScale = event.yScale!.copy();
 
-    const xDomain = xScale.domain();
-    const yDomain = yScale.domain();
+    const xDomain = xScale.domain() as [number, number];
+    const yDomain = yScale.domain() as [number, number];
 
     const offsetX = this.offsetX;
     const offsetY = this.offsetY;
@@ -63,8 +77,8 @@ export class GridLayer extends CanvasLayer {
     xScale.domain([xDomain[0] - offsetX, xDomain[1] - offsetX]);
     yScale.domain([yDomain[0] - offsetY, yDomain[1] - offsetY]);
 
-    const [rx1, rx2] = xScale.range();
-    const [ry1, ry2] = yScale.range();
+    const [rx1, rx2] = xScale.range() as [number, number];
+    const [ry1, ry2] = yScale.range() as [number, number];
 
     ctx.lineWidth = minorWidth || MINORWIDTH;
     ctx.strokeStyle = minorColor || MINORCOLOR;
@@ -84,30 +98,34 @@ export class GridLayer extends CanvasLayer {
     ctx.restore();
   }
 
-  private renderTicksX(xscale: any, xticks: any, ry1: any, ry2: any): void {
-    xticks.forEach((tx: any) => {
+  private renderTicksX(xscale: ScaleLinear<number, number, never>, xticks: number[], ry1: number, ry2: number): void {
+    xticks.forEach((tx: number) => {
       const x = xscale(tx);
-      this.ctx.beginPath();
-      this.ctx.moveTo(x, ry1);
-      this.ctx.lineTo(x, ry2);
-      this.ctx.stroke();
+      if (this.ctx != null) {
+        this.ctx.beginPath();
+        this.ctx.moveTo(x, ry1);
+        this.ctx.lineTo(x, ry2);
+        this.ctx.stroke();
+      }
     });
   }
 
-  private renderTicksY(yscale: any, yticks: any, rx1: any, rx2: any): void {
-    yticks.forEach((ty: any) => {
+  private renderTicksY(yscale: ScaleLinear<number, number, never>, yticks: number[], rx1: number, rx2: number): void {
+    yticks.forEach((ty: number) => {
       const y = yscale(ty);
-      this.ctx.beginPath();
-      this.ctx.moveTo(rx1, y);
-      this.ctx.lineTo(rx2, y);
-      this.ctx.stroke();
+      if (this.ctx != null) {
+        this.ctx.beginPath();
+        this.ctx.moveTo(rx1, y);
+        this.ctx.lineTo(rx2, y);
+        this.ctx.stroke();
+      }
     });
   }
 
-  private mapMinorTicks(ticks: any): void {
-    let xminticks = [];
+  private mapMinorTicks(ticks: number[]): number[] {
+    let xminticks: number[] = [];
     if (ticks.length >= 2) {
-      xminticks = ticks.map((v: any) => v + (ticks[1] - ticks[0]) / 2);
+      xminticks = ticks.map((v: number) => v + (ticks[1]! - ticks[0]!) / 2);
       xminticks.pop();
     }
     return xminticks;

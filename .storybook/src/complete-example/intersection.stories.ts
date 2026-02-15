@@ -1,4 +1,3 @@
-import { IntersectionReferenceSystem, Controller } from '../../../src/control';
 import {
   GridLayer,
   WellborepathLayer,
@@ -6,28 +5,44 @@ import {
   GeomodelLabelsLayer,
   Layer,
   SeismicCanvasLayer,
-  HoleSizeLayer,
-  CasingLayer,
-  CompletionLayer,
-  CementLayer,
   CalloutCanvasLayer,
-} from '../../../src/layers';
-
-import { createButtonContainer, createFPSLabel, createLayerContainer, createRootContainer, createHelpText } from '../utils';
-
-import {
+  PixiRenderApplication,
   generateSurfaceData,
   SurfaceData,
   getSeismicInfo,
   generateSeismicSliceImage,
   transformFormationData,
   getPicksData,
-} from '../../../src/datautils';
+  getSeismicOptions,
+  IntersectionReferenceSystem,
+  Controller,
+  Annotation,
+  SchematicLayer,
+  SchematicLayerOptions,
+  InternalLayerOptions,
+  Perforation,
+  SchematicData,
+  ReferenceLine,
+  ReferenceLineLayer,
+} from '../../../src';
+
+import { createButtonContainer, createFPSLabel, createLayerContainer, createRootContainer, createHelpText } from '../utils';
 
 //Data
 import { seismicColorMap } from '../exampledata';
 
-import { getCompletion, getSeismic, getSurfaces, getWellborePath, getStratColumns, getHolesize, getCasings, getCement, getPicks } from '../data';
+import {
+  getSeismic,
+  getSurfaces,
+  getWellborePath,
+  getStratColumns,
+  getHolesize,
+  getCasings,
+  getCement,
+  getPicks,
+  getCompletion,
+  getCementSqueezes,
+} from '../data';
 
 export const intersection = () => {
   const xBounds: [number, number] = [0, 1000];
@@ -61,6 +76,7 @@ const renderIntersection = (scaleOptions: any) => {
   const root = createRootContainer(width);
   const btnToggleContainer = createButtonContainer(width);
   const btnAdjustSizeContainer = createButtonContainer(width);
+  const btnSchematicContainer = createButtonContainer(width);
   const btnMiscContainer = createButtonContainer(width);
   const container = createLayerContainer(width, height);
 
@@ -74,9 +90,10 @@ const renderIntersection = (scaleOptions: any) => {
     getHolesize(),
     getCement(),
     getPicks(),
+    getCementSqueezes(),
   ];
   Promise.all(promises).then((values) => {
-    const [path, completion, seismic, surfaces, stratColumns, casings, holesizes, cement, picks] = values;
+    const [path, completion, seismic, surfaces, stratColumns, casings, holeSizes, cement, picks, cementSqueezes] = values;
     const referenceSystem = new IntersectionReferenceSystem(path);
     referenceSystem.offset = path[0][2]; // Offset should be md at start of path
     const displacement = referenceSystem.displacement || 1;
@@ -85,40 +102,137 @@ const renderIntersection = (scaleOptions: any) => {
     const traj = referenceSystem.getTrajectory(steps, 0, 1 + extend);
     const trajectory: number[][] = IntersectionReferenceSystem.toDisplacement(traj.points, traj.offset);
     const geolayerdata: SurfaceData = generateSurfaceData(trajectory, stratColumns, surfaces);
-    const seismicInfo = getSeismicInfo(seismic, trajectory) || {
-      x: 0,
-      y: 0,
-      width: 0,
-      height: 0,
-    };
+    const seismicInfo = getSeismicInfo(seismic, trajectory);
 
     const transformedPicksData = transformFormationData(picks, stratColumns);
     const picksData = getPicksData(transformedPicksData);
 
-    // Instantiate layers
-    const gridLayer = new GridLayer('grid', { majorColor: 'black', minorColor: 'gray', majorWidth: 0.5, minorWidth: 0.5, order: 1, referenceSystem });
-    const geomodelLayer = new GeomodelLayerV2('geomodel', { order: 2, layerOpacity: 0.6, data: geolayerdata });
-    const wellboreLayer = new WellborepathLayer('wellborepath', { order: 3, strokeWidth: '2px', stroke: 'red', referenceSystem });
-    const holeSizeLayer = new HoleSizeLayer('holesize', { order: 4, data: holesizes, referenceSystem });
-    const casingLayer = new CasingLayer('casing', { order: 5, data: casings, referenceSystem });
-    const geomodelLabelsLayer = new GeomodelLabelsLayer('geomodellabels', { order: 3, data: geolayerdata });
-    const seismicLayer = new SeismicCanvasLayer('seismic', { order: 1 });
-    const completionLayer = new CompletionLayer('completion', { order: 4, data: completion, referenceSystem });
-    const cementLayer = new CementLayer('cement', { order: 99, data: { cement, casings, holes: holesizes }, referenceSystem });
-    const calloutLayer = new CalloutCanvasLayer('callout', { order: 100, data: picksData, referenceSystem });
+    const pixiContext1 = new PixiRenderApplication({ width, height });
+    const pixiContext2 = new PixiRenderApplication({ width, height });
 
-    const layers = [
-      gridLayer,
-      geomodelLayer,
-      wellboreLayer,
-      geomodelLabelsLayer,
-      seismicLayer,
-      completionLayer,
-      holeSizeLayer,
-      casingLayer,
-      cementLayer,
-      calloutLayer,
+    // Instantiate layers
+    const gridLayer = new GridLayer('grid', {
+      majorColor: 'black',
+      minorColor: 'gray',
+      majorWidth: 0.5,
+      minorWidth: 0.5,
+      order: 1,
+      referenceSystem,
+    });
+    const geomodelLayer = new GeomodelLayerV2<SurfaceData>(pixiContext1, 'geomodel', { order: 2, layerOpacity: 0.6, data: geolayerdata });
+    const wellboreLayer = new WellborepathLayer('wellborepath', { order: 3, strokeWidth: '2px', stroke: 'red', referenceSystem });
+    const geomodelLabelsLayer = new GeomodelLabelsLayer<SurfaceData>('geomodellabels', { order: 3, data: geolayerdata });
+    const seismicLayer = new SeismicCanvasLayer('seismic', { order: 1 });
+
+    const CSDSVGs = {
+      completionSymbol1:
+        'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgdmlld0JveD0iMCAwIDEwMCAxMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxwYXRoIGQ9Ik0xMCAwSDkwVjEwMEgxMFYwWiIgZmlsbD0iI0Q5RDlEOSIvPgo8cGF0aCBkPSJNMCAyNUgxMFY3NUgwVjI1WiIgZmlsbD0iI0I1QjJCMiIvPgo8cGF0aCBkPSJNNDUgMjVINTVWNzVINDVWMjVaIiBmaWxsPSIjQjVCMkIyIi8+CjxwYXRoIGQ9Ik05MCAyNUgxMDBWNzVIOTBWMjVaIiBmaWxsPSIjQjVCMkIyIi8+Cjwvc3ZnPgo=',
+      completionSymbol2: 'tubing1.svg', // Fetched from URL. Full URL with protocol and hostname is allowed.
+      completionSymbol3:
+        'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgdmlld0JveD0iMCAwIDEwMCAxMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxwYXRoIGQ9Ik0xMCAwSDkwVjEwMEgxMFYwWiIgZmlsbD0iI0Q5RDlEOSIvPgo8cGF0aCBkPSJNMCAyNUgxMFY3NUgwVjI1WiIgZmlsbD0iI0I1QjJCMiIvPgo8cGF0aCBkPSJNNDUgMjVINTVWNzVINDVWMjVaIiBmaWxsPSIjQjVCMkIyIi8+CjxwYXRoIGQ9Ik0yNSA2NUgzMFY4MEgyNVY2NVoiIGZpbGw9IiMzMTMxMzEiLz4KPHBhdGggZD0iTTI1IDQySDMwVjU3SDI1VjQyWiIgZmlsbD0iIzMxMzEzMSIvPgo8cGF0aCBkPSJNMjUgMjFIMzBWMzZIMjVWMjFaIiBmaWxsPSIjMzEzMTMxIi8+CjxwYXRoIGQ9Ik03MCA2NEg3NVY3OUg3MFY2NFoiIGZpbGw9IiMzMTMxMzEiLz4KPHBhdGggZD0iTTcwIDQxSDc1VjU2SDcwVjQxWiIgZmlsbD0iIzMxMzEzMSIvPgo8cGF0aCBkPSJNNzAgMjBINzVWMzVINzBWMjBaIiBmaWxsPSIjMzEzMTMxIi8+CjxwYXRoIGQ9Ik05MCAyNUgxMDBWNzVIOTBWMjVaIiBmaWxsPSIjQjVCMkIyIi8+Cjwvc3ZnPgo=',
+    };
+
+    const completionSymbols = [
+      {
+        kind: 'completionSymbol',
+        id: 'completion-svg-1',
+        start: 5250,
+        end: 5252,
+        diameter: 8.5,
+        symbolKey: 'completionSymbol1',
+      },
+      {
+        kind: 'completionSymbol',
+        id: 'completion-svg-2',
+        start: 5252,
+        end: 5274,
+        diameter: 8.5,
+        symbolKey: 'completionSymbol2',
+      },
+      {
+        kind: 'completionSymbol',
+        id: 'completion-svg-3',
+        start: 5274,
+        end: 5276,
+        diameter: 8.5,
+        symbolKey: 'completionSymbol3',
+      },
     ];
+
+    const pAndASVGs = {
+      mechanicalPlug:
+        'data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+Cjxzdmcgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIHZpZXdCb3g9IjAgMCAxMDAgMTAwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cGF0aCBkPSJNMSAxSDk5Vjk5SDFWMVoiIGZpbGw9InVybCgjcGFpbnQwX2xpbmVhcl81MF81KSIvPgo8cGF0aCBkPSJNMSAxSDk5Vjk5SDFWMVoiIGZpbGw9InVybCgjcGFpbnQxX2xpbmVhcl81MF81KSIgZmlsbC1vcGFjaXR5PSIwLjIiLz4KPHBhdGggZD0iTTEgMUg5OVY5OUgxVjFaIiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjIiLz4KPGxpbmUgeDE9IjEuNzEwNzIiIHkxPSIxLjI5NjUzIiB4Mj0iOTguNzEwNyIgeTI9Ijk5LjI5NjUiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMiIvPgo8bGluZSB4MT0iOTguNzA3MSIgeTE9IjAuNzA3MTA3IiB4Mj0iMC43MDcxIiB5Mj0iOTguNzA3MSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIyIi8+CjxkZWZzPgo8bGluZWFyR3JhZGllbnQgaWQ9InBhaW50MF9saW5lYXJfNTBfNSIgeDE9IjAiIHkxPSI1MCIgeDI9IjUwIiB5Mj0iNTAiIGdyYWRpZW50VW5pdHM9InVzZXJTcGFjZU9uVXNlIj4KPHN0b3Agc3RvcC1jb2xvcj0iI0NDMjYyNiIvPgo8c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiNGRjQ3MUEiLz4KPC9saW5lYXJHcmFkaWVudD4KPGxpbmVhckdyYWRpZW50IGlkPSJwYWludDFfbGluZWFyXzUwXzUiIHgxPSI1MCIgeTE9IjUwIiB4Mj0iMTAwIiB5Mj0iNTAiIGdyYWRpZW50VW5pdHM9InVzZXJTcGFjZU9uVXNlIj4KPHN0b3Agc3RvcC1jb2xvcj0iI0ZGNDcxQSIvPgo8c3RvcCBvZmZzZXQ9IjAuOTk5OSIgc3RvcC1jb2xvcj0iI0NDMjYyNiIvPgo8c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiNGRjQ3MUEiLz4KPC9saW5lYXJHcmFkaWVudD4KPC9kZWZzPgo8L3N2Zz4K',
+    };
+
+    const pAndASymbols = [
+      {
+        kind: 'pAndASymbol' as const,
+        id: 'mechanical-plug-1',
+        start: 5100,
+        end: 5110,
+        diameter: 8.5,
+        symbolKey: 'mechanicalPlug',
+      },
+      { kind: 'cementPlug' as const, id: 'cement-plug-2', start: 5000, end: 5110, referenceIds: ['casing-07'] },
+    ];
+
+    const perforations: Perforation[] = [
+      {
+        kind: 'perforation',
+        subKind: 'Perforation',
+        id: 'PerforationDemo1',
+        start: 4000,
+        end: 4500,
+        isOpen: true,
+      },
+      {
+        kind: 'perforation',
+        subKind: 'Cased hole frac pack',
+        id: 'PerforationDemo2',
+        start: 3500,
+        end: 4500,
+        isOpen: true,
+      },
+    ];
+
+    const schematicData: SchematicData = {
+      holeSizes,
+      cements: cement,
+      casings,
+      completion: [...completion, ...completionSymbols],
+      pAndA: [...pAndASymbols, ...cementSqueezes],
+      perforations,
+      symbols: { ...CSDSVGs, ...pAndASVGs },
+    };
+
+    const internalLayerIds: InternalLayerOptions = {
+      holeLayerId: 'hole-id',
+      casingLayerId: 'casing-id',
+      completionLayerId: 'completion-id',
+      cementLayerId: 'cement-id',
+      pAndALayerId: 'pAndA-id',
+      perforationLayerId: 'perforation-id',
+    };
+
+    const schematicLayerOptions: SchematicLayerOptions<SchematicData> = {
+      order: 5,
+      referenceSystem,
+      internalLayerOptions: internalLayerIds,
+      data: schematicData,
+    };
+
+    const schematicLayer = new SchematicLayer(pixiContext2, 'schematic-webgl-layer', schematicLayerOptions);
+
+    const seaAndRKBLayerData: ReferenceLine[] = [
+      { text: 'RKB', lineType: 'dashed', color: 'black', depth: 0 },
+      { text: 'MSL', lineType: 'wavy', color: 'blue', depth: 30 },
+      { text: 'Seabed', lineType: 'solid', color: 'slategray', depth: 91.1, lineWidth: 2 },
+    ];
+    const seaAndRKBLayer = new ReferenceLineLayer('sea-and-rkb-layer', { data: seaAndRKBLayerData });
+
+    const calloutLayer = new CalloutCanvasLayer<Annotation[]>('callout', { order: 100, data: picksData, referenceSystem });
+
+    const layers = [gridLayer, geomodelLayer, wellboreLayer, geomodelLabelsLayer, seismicLayer, schematicLayer, seaAndRKBLayer, calloutLayer];
 
     const opts = {
       scaleOptions,
@@ -131,12 +245,7 @@ const renderIntersection = (scaleOptions: any) => {
 
     addMDOverlay(controller);
 
-    const seismicOptions = {
-      x: seismicInfo.minX,
-      y: seismicInfo.minTvdMsl,
-      width: seismicInfo.maxX - seismicInfo.minX,
-      height: seismicInfo.maxTvdMsl - seismicInfo.minTvdMsl,
-    };
+    const seismicOptions = getSeismicOptions(seismicInfo);
 
     generateSeismicSliceImage(seismic as any, trajectory, seismicColorMap).then((seismicImage: ImageBitmap) => {
       seismicLayer.setData({ image: seismicImage, options: seismicOptions });
@@ -152,14 +261,21 @@ const renderIntersection = (scaleOptions: any) => {
     const btnGrid = createButton(controller, gridLayer, 'Grid');
     const btnWellbore = createButton(controller, wellboreLayer, 'Wellbore');
     const btnGeomodel = createButton(controller, geomodelLayer, 'Geo model');
-    const btnHoleSize = createButton(controller, holeSizeLayer, 'Hole size');
-    const btnCasing = createButton(controller, casingLayer, 'Casing');
-    const btnCompletion = createButton(controller, completionLayer, 'Completion');
-    const btnCement = createButton(controller, cementLayer, 'Cement');
+    const btnSchematic = createButton(controller, schematicLayer, 'Schematic');
+    const btnSeaAndRKB = createButton(controller, seaAndRKBLayer, 'SeaAndRKB');
     const btnGeomodelLabels = createButton(controller, geomodelLabelsLayer, 'Geo model labels');
     const btnSeismic = createButton(controller, seismicLayer, 'Seismic');
     const btnPicks = createButton(controller, calloutLayer, 'Picks');
-    const btnSetDataForCompletion = createSetLayerButton(cementLayer, casingLayer, cement, casings, holesizes);
+
+    const internalLayerVisibilityButtons = [
+      ['Holes', internalLayerIds.holeLayerId],
+      ['Casings', internalLayerIds.casingLayerId],
+      ['Cement', internalLayerIds.cementLayerId],
+      ['Completion', internalLayerIds.completionLayerId],
+      ['Plug & Abandonment', internalLayerIds.pAndALayerId],
+      ['Perforations', internalLayerIds.perforationLayerId],
+    ].map(([description, internalLayerId]) => createInternalLayerVisibilityButton(controller, internalLayerId, description));
+
     let show = true;
     const toggleAxis = createButtonWithCb(
       'Axis labels',
@@ -213,16 +329,15 @@ const renderIntersection = (scaleOptions: any) => {
     btnToggleContainer.appendChild(btnGeomodel);
     btnToggleContainer.appendChild(btnGeomodelLabels);
     btnToggleContainer.appendChild(btnSeismic);
-    btnToggleContainer.appendChild(btnHoleSize);
-    btnToggleContainer.appendChild(btnCasing);
-    btnToggleContainer.appendChild(btnCompletion);
-    btnToggleContainer.appendChild(btnCement);
+    btnToggleContainer.appendChild(btnSchematic);
+    btnToggleContainer.appendChild(btnSeaAndRKB);
     btnToggleContainer.appendChild(btnPicks);
     btnToggleContainer.appendChild(toggleAxis);
     btnAdjustSizeContainer.appendChild(btnLarger);
     btnAdjustSizeContainer.appendChild(btnSmaller);
     btnAdjustSizeContainer.appendChild(btnDefault);
     btnMiscContainer.appendChild(btnClearData);
+    internalLayerVisibilityButtons.forEach((button) => btnSchematicContainer.appendChild(button));
 
     root.appendChild(
       createHelpText(
@@ -232,6 +347,8 @@ const renderIntersection = (scaleOptions: any) => {
     root.appendChild(container);
     root.appendChild(createHelpText('Toggle'));
     root.appendChild(btnToggleContainer);
+    root.appendChild(createHelpText('Schematic toggle'));
+    root.appendChild(btnSchematicContainer);
     root.appendChild(createHelpText('Adjust size'));
     root.appendChild(btnAdjustSizeContainer);
     root.appendChild(createHelpText('Miscellaneous'));
@@ -282,7 +399,7 @@ function addMDOverlay(instance: any) {
  * @param title
  * @param additionalEventParams
  */
-const createButton = (manager: Controller, layer: Layer, title: string) => {
+const createButton = <T>(manager: Controller, layer: Layer<T>, title: string) => {
   const btn = document.createElement('button');
   btn.innerHTML = `${title}`;
   btn.setAttribute('style', 'width: 170px;height:32px;margin-top:12px;background: lightblue;');
@@ -302,18 +419,22 @@ const createButton = (manager: Controller, layer: Layer, title: string) => {
   return btn;
 };
 
-const createSetLayerButton = (cementLayer: any, casingLayer: any, cement: any, casings: any, holes: any) => {
+const createInternalLayerVisibilityButton = (manager: Controller, internalLayerId: string, title: string) => {
   const btn = document.createElement('button');
-  btn.innerHTML = `Update data for compl`;
-  btn.setAttribute('style', 'width: 130px;height:32px;margin-top:12px;');
+  btn.innerHTML = `${title}`;
+  btn.setAttribute('style', 'width: 170px;height:32px;margin-top:12px;background: lightblue;');
+  let show = false;
   btn.onclick = () => {
-    const alterWBI = (c: any): any => {
-      return { ...c, end: c.end += 15 };
-    };
-    casings[0] = alterWBI(casings[0]);
-    holes[0] = alterWBI(holes[0]);
-    cementLayer.setData({ cement, casings, holes });
-    casingLayer.setData(casings);
+    if (show) {
+      manager.showLayer(internalLayerId);
+      btn.style.backgroundColor = 'lightblue';
+      btn.style.color = '';
+    } else {
+      manager.hideLayer(internalLayerId);
+      btn.style.backgroundColor = 'red';
+      btn.style.color = 'white';
+    }
+    show = !show;
   };
   return btn;
 };
@@ -331,3 +452,8 @@ function createButtonWithCb(label: string, cb: any, initialStyle = '') {
   btn.onclick = () => cb(btn);
   return btn;
 }
+
+export default {
+  title: 'ESV Intersection/Complete example',
+  component: intersection,
+};

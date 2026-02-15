@@ -1,3 +1,4 @@
+import { describe, expect, it, beforeEach } from 'vitest';
 import { degrees } from '@equinor/videx-math';
 import { IntersectionReferenceSystem } from '../src';
 
@@ -9,8 +10,8 @@ const wp = [
 ];
 
 function dist(a: number[], b: number[]): number {
-  const d0 = a[0] - b[0];
-  const d1 = a[1] - b[1];
+  const d0 = a[0]! - b[0]!;
+  const d1 = a[1]! - b[1]!;
   return Math.sqrt(d0 * d0 + d1 * d1);
 }
 
@@ -28,27 +29,27 @@ describe('Reference system', () => {
     expect(rs.path).toEqual(wp);
   });
   it('should return error on empty path', () => {
-    const arr: any[] = [];
+    const arr: number[][] = [];
     expect(() => {
-      const test = new IntersectionReferenceSystem(arr);
+      new IntersectionReferenceSystem(arr);
     }).toThrow('Missing coordinates');
   });
   it('should return error when path is in 4d and not 3d', () => {
-    const arr: any[] = [[1, 1, 1, 1]];
+    const arr: number[][] = [[1, 1, 1, 1]];
     expect(() => {
-      const test = new IntersectionReferenceSystem(arr);
+      new IntersectionReferenceSystem(arr);
     }).toThrow('Coordinates should be in 3d');
   });
   it('should return error when path is in 2d and not 3d', () => {
-    const arr: any[] = [[1, 1]];
+    const arr: number[][] = [[1, 1]];
     expect(() => {
-      const test = new IntersectionReferenceSystem(arr);
+      new IntersectionReferenceSystem(arr);
     }).toThrow('Coordinates should be in 3d');
   });
   it('should return error when path is in 1d and not 3d', () => {
-    const arr: any[] = [[1]];
+    const arr: number[][] = [[1]];
     expect(() => {
-      const test = new IntersectionReferenceSystem(arr);
+      new IntersectionReferenceSystem(arr);
     }).toThrow('Coordinates should be in 3d');
   });
   it('should get start position at 0', () => {
@@ -72,10 +73,10 @@ describe('Reference system', () => {
   });
   it('should have same distance between points in trajectory', () => {
     const trajectory = rs.getTrajectory(80);
-    const firstDistance = dist(trajectory.points[0], trajectory.points[1]);
-    let lastPoint = trajectory.points[1];
+    const firstDistance = dist(trajectory.points[0]!, trajectory.points[1]!);
+    let lastPoint = trajectory.points[1]!;
     for (let i = 2; i < trajectory.points.length; i++) {
-      const point = trajectory.points[i];
+      const point = trajectory.points[i]!;
       const currentDistance = dist(point, lastPoint);
       expect(currentDistance).toBeCloseTo(firstDistance);
       lastPoint = point;
@@ -86,13 +87,12 @@ describe('Reference system', () => {
     expect(trajectory.points.length).toEqual(100);
   });
 
-
   it('should have same distance between points in extended trajectory', () => {
     const trajectory = rs.getExtendedTrajectory(200, 500.0, 500.0);
-    const firstDistance = dist(trajectory.points[0], trajectory.points[1]);
-    let lastPoint = trajectory.points[1];
-    for(let i = 2; i < trajectory.points.length; i++){
-      const point = trajectory.points[i];
+    const firstDistance = dist(trajectory.points[0]!, trajectory.points[1]!);
+    let lastPoint = trajectory.points[1]!;
+    for (let i = 2; i < trajectory.points.length; i++) {
+      const point = trajectory.points[i]!;
       const currentDistance = dist(point, lastPoint);
       expect(currentDistance).toBeCloseTo(firstDistance, 0);
       lastPoint = point;
@@ -100,18 +100,18 @@ describe('Reference system', () => {
   });
   it('should have correct length on extension', () => {
     const trajectory = rs.getExtendedTrajectory(100, 500.0, 500.0);
-    const startExtend = dist(trajectory.points[0], rs.interpolators.trajectory.getPointAt(0.0));
-    const endExtend = dist(trajectory.points[99], rs.interpolators.trajectory.getPointAt(1.0));
+    const startExtend = dist(trajectory.points[0]!, rs.interpolators.trajectory.getPointAt(0.0) as number[]);
+    const endExtend = dist(trajectory.points[99]!, rs.interpolators.trajectory.getPointAt(1.0) as number[]);
     expect(startExtend).toBeCloseTo(500.0);
     expect(endExtend).toBeCloseTo(500.0);
   });
 
   it('should throw error when parameters are negative', () => {
     expect(() => {
-      const trajectory = rs.getExtendedTrajectory(100, -50.0, 500.0);
+      rs.getExtendedTrajectory(100, -50.0, 500.0);
     }).toThrow('Invalid parameter, getExtendedTrajectory() must be called with a valid and positive startExtensionLength parameter');
     expect(() => {
-      const trajectory = rs.getExtendedTrajectory(100, 50.0, -500.0);
+      rs.getExtendedTrajectory(100, 50.0, -500.0);
     }).toThrow('Invalid parameter, getExtendedTrajectory() must be called with a valid and positive endExtensionLength parameter');
   });
 
@@ -120,26 +120,29 @@ describe('Reference system', () => {
       [30, 40, 100],
       [30, 40, 7000],
     ];
-    const options = {trajectoryAngle: 45.0};
+    const options = { trajectoryAngle: 45.0 };
     const irs = new IntersectionReferenceSystem(verticalPosLog, options);
 
     const trajectory = irs.getExtendedTrajectory(100, 1500.0, 1500.0);
     expect(trajectory.points.length).toEqual(100);
 
-    const startExtend = dist(trajectory.points[0], irs.interpolators.trajectory.getPointAt(0.0));
-    const endExtend = dist(trajectory.points[99], irs.interpolators.trajectory.getPointAt(1.0));
+    const startExtend = dist(trajectory.points[0]!, irs.interpolators.trajectory.getPointAt(0.0) as number[]);
+    const endExtend = dist(trajectory.points[99]!, irs.interpolators.trajectory.getPointAt(1.0) as number[]);
     expect(startExtend).toBeCloseTo(1500.0);
     expect(endExtend).toBeCloseTo(1500.0);
-    const angle = degrees(Math.atan((trajectory.points[99][0] - trajectory.points[0][0]) / (trajectory.points[99][1] - trajectory.points[0][1])));
+    const angle = degrees(
+      Math.atan((trajectory.points[99]?.[0]! - trajectory.points[0]?.[0]!) / (trajectory.points[99]?.[1]! - trajectory.points[0]?.[1]!)),
+    );
     expect(angle).toBeCloseTo(45.0);
   });
 
-  it('should project to right depths on vertical wellbores', () => {  // Note: this is used for picks
+  it('should project to right depths on vertical wellbores', () => {
+    // Note: this is used for picks
     const verticalPosLog = [
       [30, 40, 50],
       [30, 40, 6500],
     ];
-    const options = {trajectoryAngle: 45.0};
+    const options = { trajectoryAngle: 45.0 };
     const irs = new IntersectionReferenceSystem(verticalPosLog, options);
     irs.offset = 50;
 
@@ -148,15 +151,15 @@ describe('Reference system', () => {
 
     expect(irs.project(200)[1]).toBeCloseTo(200, 1);
     expect(irs.project(6000)[1]).toBeCloseTo(6000, 1);
-
   });
 
-  it('should project to right depths on vertical wellbores with negative offset', () => {  // Note: this is used for picks
+  it('should project to right depths on vertical wellbores with negative offset', () => {
+    // Note: this is used for picks
     const verticalPosLog = [
       [80, 40, -25],
       [80, 40, 5000],
     ];
-    const options = {trajectoryAngle: 45.0};
+    const options = { trajectoryAngle: 45.0 };
     const irs = new IntersectionReferenceSystem(verticalPosLog, options);
     irs.offset = -25;
 
@@ -166,8 +169,5 @@ describe('Reference system', () => {
 
     expect(irs.project(200)[1]).toBeCloseTo(200, 1);
     expect(irs.project(4000)[1]).toBeCloseTo(4000, 1);
-
   });
-
-
 });

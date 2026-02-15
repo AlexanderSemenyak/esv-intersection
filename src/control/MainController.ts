@@ -3,7 +3,7 @@ import { LayerManager } from './LayerManager';
 import { Layer } from '../layers';
 import { ControllerOptions } from './interfaces';
 import { ZoomPanHandler } from './ZoomPanHandler';
-import { ReferenceSystemOptions } from '..';
+import { LayerOptions, OnRescaleEvent, ReferenceSystemOptions } from '..';
 import { Axis } from '../components';
 import { overlay, Overlay } from './overlay';
 import { HORIZONTAL_AXIS_MARGIN, VERTICAL_AXIS_MARGIN } from '../constants';
@@ -12,10 +12,10 @@ import { HORIZONTAL_AXIS_MARGIN, VERTICAL_AXIS_MARGIN } from '../constants';
  * API for controlling data and layers
  */
 export class Controller {
-  private _referenceSystem: IntersectionReferenceSystem;
+  private _referenceSystem: IntersectionReferenceSystem | undefined;
 
   private layerManager: LayerManager;
-  private _overlay: Overlay;
+  private _overlay: Overlay<Controller>;
 
   /**
    * Interface to control layers, reference system, axis and overlay. overlay is created on instantiation, does not currently support opt-out.
@@ -69,7 +69,7 @@ export class Controller {
    * Clears data from all mounted layers
    * @param includeReferenceSystem - (optional) if true also removes reference system, default is true
    */
-  clearAllData(includeReferenceSystem: boolean = true): Controller {
+  clearAllData(includeReferenceSystem = true): Controller {
     this.layerManager.clearAllData(includeReferenceSystem);
     return this;
   }
@@ -79,7 +79,7 @@ export class Controller {
    * @param layer layer object
    * @param params (optional) adds additional parameters to the onUpdateEvent
    */
-  addLayer(layer: Layer, params?: any): Controller {
+  addLayer(layer: Layer<unknown>, params?: LayerOptions<unknown>): Controller {
     this.layerManager.addLayer(layer, params);
     this.setOverlayZIndex(this.layerManager.getLayers());
     return this;
@@ -106,7 +106,7 @@ export class Controller {
    * Find first layer with given id, returns undefined if none are found
    * @param layerId string id
    */
-  getLayer(layerId: string): Layer {
+  getLayer(layerId: string): Layer<unknown> | undefined {
     return this.layerManager.getLayer(layerId);
   }
 
@@ -259,26 +259,24 @@ export class Controller {
     this.layerManager.destroy();
     this._overlay.destroy();
     this._referenceSystem = undefined;
-    this.layerManager = undefined;
-    this._overlay = undefined;
     return this;
   }
 
-  private getHighestZIndex(layers: Layer[]): number {
+  private getHighestZIndex(layers: Layer<unknown>[]): number {
     const highestZIndex = layers.length > 0 ? layers.reduce((max, layers) => (max.order > layers.order ? max : layers)).order : 1;
     return highestZIndex;
   }
 
-  private setOverlayZIndex(layers: Layer[]): void {
+  private setOverlayZIndex(layers: Layer<unknown>[]): void {
     const highestZIndex = this.getHighestZIndex(layers);
     this.overlay.setZIndex(highestZIndex + 2);
   }
 
-  get overlay(): Overlay {
+  get overlay(): Overlay<Controller> {
     return this._overlay;
   }
 
-  get referenceSystem(): IntersectionReferenceSystem {
+  get referenceSystem(): IntersectionReferenceSystem | undefined {
     return this._referenceSystem;
   }
 
@@ -286,11 +284,11 @@ export class Controller {
     return this.layerManager.zoomPanHandler;
   }
 
-  get axis(): Axis {
+  get axis(): Axis | undefined {
     return this.layerManager.axis;
   }
 
-  get currentStateAsEvent(): any {
+  get currentStateAsEvent(): OnRescaleEvent {
     return this.zoomPanHandler.currentStateAsEvent();
   }
 }

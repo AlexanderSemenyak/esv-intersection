@@ -3,14 +3,14 @@ import { Layer } from './Layer';
 import { OnMountEvent, OnResizeEvent } from '../../interfaces';
 import { DEFAULT_LAYER_HEIGHT, DEFAULT_LAYER_WIDTH } from '../../constants';
 
-export abstract class HTMLLayer extends Layer {
-  elm: Selection<HTMLElement, any, null, undefined>;
+export abstract class HTMLLayer<T> extends Layer<T> {
+  elm: Selection<HTMLDivElement, unknown, null, undefined> | undefined;
 
-  onMount(event: OnMountEvent): void {
+  override onMount(event: OnMountEvent): void {
     super.onMount(event);
     const { elm } = event;
-    const width = event.width || parseInt(elm.getAttribute('width'), 10) || DEFAULT_LAYER_WIDTH;
-    const height = event.height || parseInt(elm.getAttribute('height'), 10) || DEFAULT_LAYER_HEIGHT;
+    const width = event.width || parseInt(elm?.getAttribute('width') ?? '', 10) || DEFAULT_LAYER_WIDTH;
+    const height = event.height || parseInt(elm?.getAttribute('height') ?? '', 10) || DEFAULT_LAYER_HEIGHT;
 
     if (!this.elm) {
       this.elm = select(elm).append('div');
@@ -28,13 +28,13 @@ export abstract class HTMLLayer extends Layer {
       .style('z-index', this.order);
   }
 
-  onUnmount(): void {
+  override onUnmount(): void {
     super.onUnmount();
-    this.elm.remove();
-    this.elm = null;
+    this.elm?.remove();
+    this.elm = undefined;
   }
 
-  onResize(event: OnResizeEvent): void {
+  override onResize(event: OnResizeEvent): void {
     if (!this.elm) {
       return;
     }
@@ -42,7 +42,7 @@ export abstract class HTMLLayer extends Layer {
     this.elm.style('height', `${event.height}px`).style('width', `${event.width}px`);
   }
 
-  setVisibility(visible: boolean): void {
+  override setVisibility(visible: boolean): void {
     super.setVisibility(visible);
     if (this.elm) {
       this.elm.attr('visibility', visible ? 'visible' : 'hidden');

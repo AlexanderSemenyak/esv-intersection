@@ -1,17 +1,26 @@
+import { vi } from 'vitest';
 import { RENDERER_TYPE } from 'pixi.js';
 
-const pixi = jest.requireActual('pixi.js');
-
-module.exports = {
-  ...pixi,
-  Application: class Application {
+vi.mock('pixi.js', async (importOriginal) => {
+  const pixi = await importOriginal();
+  class MockRenderer {
+    destroy = vi.fn();
+    render = vi.fn();
     view = document.createElement('div');
-    renderer = { type: RENDERER_TYPE.WEBGL };
-    stage = {
-      addChild: jest.fn(),
-      removeChildren: jest.fn((): any[] => []),
-      position: { set: jest.fn() },
-      scale: { set: jest.fn() },
-    };
-  },
-};
+    type: RENDERER_TYPE.WEBGL;
+  }
+
+  class MockContainer {
+    destroy = vi.fn();
+    addChild = vi.fn();
+    removeChildren = vi.fn((): any[] => []);
+    position = { set: vi.fn() };
+    scale = { set: vi.fn() };
+  }
+
+  return {
+    ...pixi,
+    Container: MockContainer,
+    autoDetectRenderer: () => new MockRenderer(),
+  };
+});

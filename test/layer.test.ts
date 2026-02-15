@@ -1,14 +1,24 @@
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { Layer, OnUpdateEvent } from '../src';
 
-class TestLayer extends Layer {
-  testString: string = '';
-  updateWasCalled: boolean = false;
-  setData(data: any) {
+class TestLayer extends Layer<string> {
+  onOpacityChanged(_opacity: number): void {
+    throw new Error('Method not implemented.');
+  }
+  onOrderChanged(_order: number): void {
+    throw new Error('Method not implemented.');
+  }
+  onInteractivityChanged(_interactive: boolean): void {
+    throw new Error('Method not implemented.');
+  }
+  testString = '';
+  updateWasCalled = false;
+  override setData(data: string) {
     super.setData(data);
     this.testString = data;
   }
 
-  onUpdate(event: OnUpdateEvent) {
+  override onUpdate(_event: OnUpdateEvent<string>) {
     this.updateWasCalled = true;
   }
 }
@@ -27,7 +37,7 @@ describe('Layer', () => {
   it('should set data upon construction and not call update when no element has been mounted', () => {
     const layer = new TestLayer('id', { data });
 
-    expect(layer.element).toEqual(null);
+    expect(layer.element).toEqual(undefined);
     expect(layer.data).toEqual('test');
     expect(layer.updateWasCalled).toEqual(false);
   });
@@ -36,7 +46,7 @@ describe('Layer', () => {
 
     layer.setData(data);
 
-    expect(layer.element).toEqual(null);
+    expect(layer.element).toEqual(undefined);
     expect(layer.data).toEqual('test');
     expect(layer.updateWasCalled).toEqual(false);
   });
@@ -50,5 +60,4 @@ describe('Layer', () => {
     expect(layer.data).toEqual('test');
     expect(layer.updateWasCalled).toEqual(true);
   });
-
 });

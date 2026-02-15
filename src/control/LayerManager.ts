@@ -1,6 +1,6 @@
 import { select, Selection } from 'd3-selection';
 import { ZoomPanHandler } from './ZoomPanHandler';
-import { Layer, GridLayer } from '../layers';
+import { Layer, GridLayer, LayerOptions } from '../layers';
 import { ScaleOptions, OnMountEvent, OnRescaleEvent } from '../interfaces';
 import { Axis } from '../components';
 import { IntersectionReferenceSystem } from './IntersectionReferenceSystem';
@@ -14,10 +14,10 @@ export class LayerManager {
 
   private _zoomPanHandler: ZoomPanHandler;
 
-  private layers: Layer[] = [];
+  private layers: Layer<unknown>[] = [];
 
-  private _axis: Axis;
-  private _svgContainer: Selection<HTMLElement, unknown, null, undefined>;
+  private _axis: Axis | undefined;
+  private _svgContainer: Selection<HTMLDivElement, unknown, null, undefined> | undefined;
 
   /**
    * Handles layers and axis also holds a zoom and pan handler object
@@ -30,7 +30,7 @@ export class LayerManager {
     this.layerContainer = document.createElement('div');
     this.layerContainer.className = 'layer-container';
     this.container.appendChild(this.layerContainer);
-    this.adjustToSize(+this.container.getAttribute('width'), +this.container.getAttribute('height'));
+    this.adjustToSize(+(this.container.getAttribute('width') ?? 0), +(this.container.getAttribute('height') ?? 0));
     this._zoomPanHandler = new ZoomPanHandler(container, (event) => this.rescale(event));
     if (scaleOptions) {
       const { xMin, xMax, yMin, yMax, xBounds, yBounds } = scaleOptions;
@@ -55,7 +55,7 @@ export class LayerManager {
    * Adds and mounts an array of layers
    * @param layers array of layers
    */
-  addLayers(layers: Layer[]): LayerManager {
+  addLayers(layers: Layer<unknown>[]): LayerManager {
     layers.forEach((layer) => this.addLayer(layer));
     return this;
   }
@@ -63,7 +63,7 @@ export class LayerManager {
   /**
    * Gets all layers currently mounted
    */
-  getLayers(): Layer[] {
+  getLayers(): Layer<unknown>[] {
     return this.layers;
   }
 
@@ -71,7 +71,7 @@ export class LayerManager {
    * Clears data from all mounted layers
    * @param includeReferenceSystem - (optional) if true also removes reference system, default is true
    */
-  clearAllData(includeReferenceSystem: boolean = true): LayerManager {
+  clearAllData(includeReferenceSystem = true): LayerManager {
     this.layers.forEach((l) => l.clearData(includeReferenceSystem));
     return this;
   }
@@ -81,7 +81,7 @@ export class LayerManager {
    * @param layer Layer
    * @param params extra params to pass to the onUpdate method
    */
-  addLayer(layer: Layer, params?: any): LayerManager {
+  addLayer(layer: Layer<unknown>, params?: LayerOptions<unknown>): LayerManager {
     this.layers.push(layer);
     this.initLayer(layer, params);
 
@@ -113,11 +113,11 @@ export class LayerManager {
     return this;
   }
 
-  getLayer(layerId: string): Layer {
-    return this.layers.find((l) => l.id === layerId);
+  getLayer(layerId: string): Layer<unknown> | undefined {
+    return this.layers.find((l) => l.id === layerId || l.getInternalLayerIds().includes(layerId));
   }
 
-  initLayer(layer: Layer, params?: any): LayerManager {
+  initLayer(layer: Layer<unknown>, params?: LayerOptions<unknown>): LayerManager {
     const event: OnMountEvent = {
       elm: this.layerContainer,
     };
@@ -136,13 +136,21 @@ export class LayerManager {
 
   showLayer(layerId: string): LayerManager {
     const layer = this.getLayer(layerId);
-    layer.setVisibility(true);
+    if (!layer) {
+      return this;
+    }
+    layer.setVisibility(true, layerId);
     layer.onRescale(this.zoomPanHandler.currentStateAsEvent());
     return this;
   }
 
   hideLayer(layerId: string): LayerManager {
-    this.getLayer(layerId).setVisibility(false);
+    const layer = this.getLayer(layerId);
+    if (!layer) {
+      return this;
+    }
+    layer.setVisibility(false, layerId);
+    layer.onRescale(this.zoomPanHandler.currentStateAsEvent());
     return this;
   }
 
@@ -173,51 +181,57 @@ export class LayerManager {
   }
 
   showAxis(): LayerManager {
-    this._axis.show();
+    this._axis?.show();
     return this;
   }
 
   hideAxis(): LayerManager {
-    this._axis.hide();
+    this._axis?.hide();
     return this;
   }
 
   showAxisLabels(): LayerManager {
-    this._axis.showLabels();
+    this._axis?.showLabels();
     return this;
   }
 
   hideAxisLabels(): LayerManager {
-    this._axis.hideLabels();
+    this._axis?.hideLabels();
     return this;
   }
 
   setAxisOffset(x: number, y: number): LayerManager {
-    this._axis.offsetX = x;
-    this._axis.offsetY = y;
-    const gridLayers = this.layers.filter((l: Layer) => l instanceof GridLayer);
-    gridLayers.forEach((l: GridLayer) => {
-      l.offsetX = x;
-      l.offsetY = y;
-    });
+    if (this._axis) {
+      this._axis.offsetX = x;
+      this._axis.offsetY = y;
+      const gridLayers = this.layers.filter((l: Layer<unknown>): l is GridLayer<unknown> => l instanceof GridLayer);
+      gridLayers.forEach((l: GridLayer<unknown>) => {
+        l.offsetX = x;
+        l.offsetY = y;
+      });
+    }
     return this;
   }
 
   setXAxisOffset(x: number): LayerManager {
-    this._axis.offsetX = x;
-    const gridLayers = this.layers.filter((l: Layer) => l instanceof GridLayer);
-    gridLayers.forEach((l: GridLayer) => {
-      l.offsetX = x;
-    });
+    if (this._axis) {
+      this._axis.offsetX = x;
+      const gridLayers = this.layers.filter((l: Layer<unknown>): l is GridLayer<unknown> => l instanceof GridLayer);
+      gridLayers.forEach((l: GridLayer<unknown>) => {
+        l.offsetX = x;
+      });
+    }
     return this;
   }
 
   setYAxisOffset(y: number): LayerManager {
-    this._axis.offsetY = y;
-    const gridLayers = this.layers.filter((l: Layer) => l instanceof GridLayer);
-    gridLayers.forEach((l: GridLayer) => {
-      l.offsetY = y;
-    });
+    if (this._axis) {
+      this._axis.offsetY = y;
+      const gridLayers = this.layers.filter((l: Layer<unknown>): l is GridLayer<unknown> => l instanceof GridLayer);
+      gridLayers.forEach((l: GridLayer<unknown>) => {
+        l.offsetY = y;
+      });
+    }
     return this;
   }
 
@@ -239,10 +253,6 @@ export class LayerManager {
   destroy(): LayerManager {
     this.removeAllLayers();
     this.layerContainer.remove();
-    this.layerContainer = undefined;
-    this.container = undefined;
-    this.layers = undefined;
-    this._zoomPanHandler = undefined;
     this._axis = undefined;
     this._svgContainer = undefined;
 
@@ -253,7 +263,7 @@ export class LayerManager {
     return this._zoomPanHandler;
   }
 
-  get axis(): Axis {
+  get axis(): Axis | undefined {
     return this._axis;
   }
 

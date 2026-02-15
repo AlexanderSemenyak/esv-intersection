@@ -1,9 +1,9 @@
-/* eslint-disable no-magic-numbers */
 import { ScaleLinear } from 'd3-scale';
 
 import { CanvasLayer } from './base/CanvasLayer';
-import { OnUpdateEvent, Annotation, OnRescaleEvent, BoundingBox, CalloutOptions } from '../interfaces';
+import { OnUpdateEvent, Annotation, OnRescaleEvent, BoundingBox } from '../interfaces';
 import { calcSize, isOverlapping, getOverlapOffset } from '../utils';
+import { LayerOptions } from './base/Layer';
 
 const DEFAULT_MIN_FONT_SIZE = 7;
 const DEFAULT_MAX_FONT_SIZE = 11;
@@ -13,6 +13,15 @@ const DEFAULT_OFFSET_MIN = 20;
 const DEFAULT_OFFSET_MAX = 120;
 const DEFAULT_OFFSET_FACTOR = 19;
 
+const DEFAULT_BACKGROUND_COLOR = 'rgba(0, 0, 0, 0.5)';
+const DEFAULT_BACKGROUND_PADDING = 5;
+const DEFAULT_BACKGROUND_BORDER_RADIUS = 5;
+
+/** Input returned if present, defaultValue used as fallback. */
+function getValueOrDefault<T>(input: T | null | undefined, defaultValue: T): T {
+  return input === null || input === undefined ? defaultValue : input;
+}
+
 const Location = {
   topleft: 'topleft',
   topright: 'topright',
@@ -20,12 +29,12 @@ const Location = {
   bottomright: 'bottomright',
 };
 
-type Point = {
+export type Point = {
   x: number;
   y: number;
 };
 
-type Callout = {
+export type Callout = {
   title: string;
   label: string;
   color: string;
@@ -37,11 +46,24 @@ type Callout = {
   dy: number;
 };
 
-export class CalloutCanvasLayer extends CanvasLayer {
-  rescaleEvent: OnRescaleEvent;
-  xRatio: number;
-  callouts: Callout[];
-  groupFilter: string[] = null;
+export interface CalloutOptions<T extends Annotation[]> extends LayerOptions<T> {
+  minFontSize?: number;
+  maxFontSize?: number;
+  fontSizeFactor?: number;
+  offsetMin?: number;
+  offsetMax?: number;
+  offsetFactor?: number;
+  fontColor?: string;
+  backgroundColor?: string;
+  backgroundPadding?: number;
+  backgroundBorderRadius?: number;
+}
+
+export class CalloutCanvasLayer<T extends Annotation[]> extends CanvasLayer<T> {
+  rescaleEvent: OnRescaleEvent | undefined;
+  xRatio: number | undefined;
+  callouts: Callout[] = [];
+  groupFilter: string[] = [];
   minFontSize: number;
   maxFontSize: number;
   fontSizeFactor: number;
@@ -49,31 +71,50 @@ export class CalloutCanvasLayer extends CanvasLayer {
   offsetMax: number;
   offsetFactor: number;
 
-  constructor(id?: string, options?: CalloutOptions) {
+  fontColor: string | undefined;
+
+  backgroundActive: boolean;
+  backgroundColor: string;
+  backgroundPadding: number;
+  backgroundBorderRadius: number;
+
+  constructor(id?: string, options?: CalloutOptions<T>) {
     super(id, options);
-    this.minFontSize = options.minFontSize || DEFAULT_MIN_FONT_SIZE;
-    this.maxFontSize = options.maxFontSize || DEFAULT_MAX_FONT_SIZE;
-    this.fontSizeFactor = options.fontSizeFactor || DEFAULT_FONT_SIZE_FACTOR;
-    this.offsetMin = options.offsetMin || DEFAULT_OFFSET_MIN;
-    this.offsetMax = options.offsetMax || DEFAULT_OFFSET_MAX;
-    this.offsetFactor = options.offsetFactor || DEFAULT_OFFSET_FACTOR;
+    this.minFontSize = options?.minFontSize || DEFAULT_MIN_FONT_SIZE;
+    this.maxFontSize = options?.maxFontSize || DEFAULT_MAX_FONT_SIZE;
+    this.fontSizeFactor = options?.fontSizeFactor || DEFAULT_FONT_SIZE_FACTOR;
+    this.offsetMin = options?.offsetMin || DEFAULT_OFFSET_MIN;
+    this.offsetMax = options?.offsetMax || DEFAULT_OFFSET_MAX;
+    this.offsetFactor = options?.offsetFactor || DEFAULT_OFFSET_FACTOR;
+
+    this.fontColor = options?.fontColor;
+
+    // Set background as active if 'backgroundColor' is defined
+    if (options?.backgroundColor) {
+      this.backgroundActive = true;
+      this.backgroundColor = options.backgroundColor;
+    } else {
+      this.backgroundActive = false;
+      this.backgroundColor = DEFAULT_BACKGROUND_COLOR;
+    }
+
+    this.backgroundPadding = options?.backgroundPadding || DEFAULT_BACKGROUND_PADDING;
+    this.backgroundBorderRadius = getValueOrDefault(options?.backgroundBorderRadius, DEFAULT_BACKGROUND_BORDER_RADIUS);
   }
 
   setGroupFilter(filter: string[]): void {
     this.groupFilter = filter;
-    this.callouts = undefined;
+    this.callouts = [];
     this.render();
   }
 
-  onUpdate(event: OnUpdateEvent): void {
+  override onUpdate(event: OnUpdateEvent<T>): void {
     super.onUpdate(event);
-
-    this.callouts = undefined;
-
+    this.callouts = [];
     this.render();
   }
 
-  onRescale(event: OnRescaleEvent): void {
+  override onRescale(event: OnRescaleEvent): void {
     super.onRescale(event);
     const isPanning = this.rescaleEvent && this.rescaleEvent.xRatio === event.xRatio;
     this.rescaleEvent = event;
@@ -93,14 +134,14 @@ export class CalloutCanvasLayer extends CanvasLayer {
 
       const fontSize = calcSize(this.fontSizeFactor, this.minFontSize, this.maxFontSize, xScale);
 
-      if (!isPanning || !this.callouts) {
+      if (!isPanning || this.callouts.length <= 0) {
         const { data, ctx, groupFilter } = this;
         const { calculateDisplacementFromBottom } = this.referenceSystem.options;
         const isLeftToRight = calculateDisplacementFromBottom ? xBounds[0] < xBounds[1] : xBounds[0] > xBounds[1];
         const scale = 0;
 
-        ctx.font = `bold ${fontSize}px arial`;
-        const filtered = data.filter((d: Annotation) => !groupFilter || groupFilter.includes(d.group));
+        ctx != null && (ctx.font = `bold ${fontSize}px arial`);
+        const filtered = data.filter((d: Annotation) => groupFilter.length <= 0 || groupFilter.includes(d.group));
         const offset = calcSize(this.offsetFactor, this.offsetMin, this.offsetMax, xScale);
         this.callouts = this.positionCallouts(filtered, isLeftToRight, xScale, yScale, scale, fontSize, offset);
       }
@@ -124,32 +165,85 @@ export class CalloutCanvasLayer extends CanvasLayer {
     });
   }
 
+  private renderBackground(title: string, label: string, x: number, y: number, fontSize: number): void {
+    const { ctx } = this;
+
+    if (ctx == null) {
+      return;
+    }
+
+    const padding = this.backgroundPadding;
+    const borderRadius = this.backgroundBorderRadius;
+
+    const titleWidth = this.measureTextWidth(title, fontSize, 'arial', 'bold');
+    const labelWidth = this.measureTextWidth(label, fontSize);
+
+    // Determine width and height of annotation
+    const width = Math.max(titleWidth, labelWidth) + padding * 2;
+    const height = (fontSize + padding) * 2;
+
+    const xMin = x - padding;
+    const yMin = y - 2 * fontSize - padding;
+
+    ctx.fillStyle = this.backgroundColor;
+
+    if (borderRadius > 0) {
+      const xMax = xMin + width;
+      const yMax = yMin + height;
+
+      // Draw rounded rect
+      ctx.beginPath();
+      ctx.moveTo(xMin + borderRadius, yMin); // Top left
+      ctx.lineTo(xMax - borderRadius, yMin);
+      ctx.quadraticCurveTo(xMax, yMin, xMax, yMin + borderRadius); // Top right corner
+      ctx.lineTo(xMax, yMax - borderRadius);
+      ctx.quadraticCurveTo(xMax, yMax, xMax - borderRadius, yMax); // Bottom right corner
+      ctx.lineTo(xMin + borderRadius, yMax);
+      ctx.quadraticCurveTo(xMin, yMax, xMin, yMax - borderRadius); // Bottom left corner
+      ctx.lineTo(xMin, yMin + borderRadius);
+      ctx.quadraticCurveTo(xMin, yMin, xMin + borderRadius, yMin); // Top left corner
+      ctx.fill();
+    } else {
+      // Draw rect if no border radius
+      ctx.fillRect(xMin, yMin, width, height);
+    }
+  }
+
   private renderAnnotation = (title: string, label: string, x: number, y: number, fontSize: number, color: string): void => {
     this.renderText(title, x, y - fontSize, fontSize, color, 'arial', 'bold');
     this.renderText(label, x, y, fontSize, color);
   };
 
-  private renderText(
-    title: string,
-    x: number,
-    y: number,
-    fontSize: number,
-    color: string,
-    font: string = 'arial',
-    fontStyle: string = 'normal',
-  ): void {
+  private renderText(title: string, x: number, y: number, fontSize: number, color: string, font = 'arial', fontStyle = 'normal'): void {
     const { ctx } = this;
-    ctx.font = `${fontStyle} ${fontSize}px ${font}`;
-    ctx.fillStyle = color;
-    ctx.fillText(title, x, y);
+    if (ctx != null) {
+      ctx.font = `${fontStyle} ${fontSize}px ${font}`;
+      ctx.fillStyle = this.fontColor || color;
+      ctx.fillText(title, x, y);
+    }
   }
 
-  private renderPoint(x: number, y: number, radius: number = 3): void {
+  private measureTextWidth(title: string, fontSize: number, font = 'arial', fontStyle = 'normal'): number {
     const { ctx } = this;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.arc(x, y, radius, 0, Math.PI * 2);
-    ctx.fill();
+
+    if (ctx == null) {
+      return 0;
+    }
+
+    ctx.font = `${fontStyle} ${fontSize}px ${font}`;
+    return ctx.measureText(title).width;
+  }
+
+  private renderPoint(x: number, y: number, color: string, radius = 3): void {
+    const { ctx } = this;
+
+    if (ctx != null) {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   private renderCallout(title: string, label: string, boundingBox: BoundingBox, color: string, location: string): void {
@@ -158,30 +252,37 @@ export class CalloutCanvasLayer extends CanvasLayer {
     const { height, width, x: dotX, y: dotY } = boundingBox;
 
     const placeLeft = location === Location.topright || location === Location.bottomright;
+
+    if (this.backgroundActive) {
+      this.renderBackground(title, label, x, y, height);
+    }
+
     this.renderAnnotation(title, label, x, y, height, color);
-    this.renderPoint(dotX, dotY);
+    this.renderPoint(dotX, dotY, color);
     this.renderLine(x, y, width, dotX, dotY, color, placeLeft);
   }
 
-  private renderLine = (x: number, y: number, width: number, dotX: number, dotY: number, color: string, placeLeft: boolean = true): void => {
+  private renderLine = (x: number, y: number, width: number, dotX: number, dotY: number, color: string, placeLeft = true): void => {
     const { ctx } = this;
     const textX = placeLeft ? x : x + width;
     const inverseTextX = placeLeft ? x + width : x;
     const textY = y + 2;
 
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1;
+    if (ctx != null) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
 
-    ctx.beginPath();
-    ctx.moveTo(dotX, dotY);
-    ctx.lineTo(textX, textY);
-    ctx.lineTo(inverseTextX, textY);
+      ctx.beginPath();
+      ctx.moveTo(dotX, dotY);
+      ctx.lineTo(textX, textY);
+      ctx.lineTo(inverseTextX, textY);
 
-    ctx.stroke();
+      ctx.stroke();
+    }
   };
 
   private getPosition(boundingBox: BoundingBox, location: string): Point {
-    const { x, y, offsetX, offsetY, width } = boundingBox;
+    const { x, y, offsetX = 0, offsetY = 0, width } = boundingBox;
     switch (location) {
       case Location.topleft:
         return {
@@ -217,9 +318,9 @@ export class CalloutCanvasLayer extends CanvasLayer {
     isLeftToRight: boolean,
     xScale: ScaleLinear<number, number>,
     yScale: ScaleLinear<number, number>,
-    scale: number,
+    _scale: number,
     fontSize: number,
-    offset: number = 20,
+    offset = 20,
   ): Callout[] {
     if (annotations.length === 0) {
       return [];
@@ -227,12 +328,12 @@ export class CalloutCanvasLayer extends CanvasLayer {
     const alignment = isLeftToRight ? Location.topleft : Location.topright;
 
     const nodes = annotations.map((a) => {
-      const pos = a.pos ? a.pos : this.referenceSystem.project(a.md);
+      const pos = a.pos ? a.pos : this.referenceSystem?.project(a.md!)!;
       return {
         title: a.title,
         label: a.label,
         color: a.color,
-        pos: { x: pos[0], y: pos[1] },
+        pos: { x: pos?.[0]!, y: pos?.[1]! },
         group: a.group,
         alignment,
         boundingBox: this.getAnnotationBoundingBox(a.title, a.label, pos, xScale, yScale, fontSize),
@@ -241,7 +342,7 @@ export class CalloutCanvasLayer extends CanvasLayer {
       };
     });
 
-    const top = [nodes[nodes.length - 1]];
+    const top = [nodes[nodes.length - 1]!];
     const bottom: Callout[] = [];
 
     // Initial best effort
@@ -265,11 +366,11 @@ export class CalloutCanvasLayer extends CanvasLayer {
     height: number,
   ): { x: number; y: number; width: number; height: number } {
     const { ctx } = this;
-    const ax1 = xScale(pos[0]);
-    const ay1 = yScale(pos[1]);
+    const ax1 = xScale(pos[0]!);
+    const ay1 = yScale(pos[1]!);
 
-    const labelWidth = ctx.measureText(label).width;
-    const titleWidth = ctx.measureText(title).width;
+    const labelWidth = ctx?.measureText(label).width ?? 0;
+    const titleWidth = ctx?.measureText(title).width ?? 0;
     const width = Math.max(labelWidth, titleWidth);
 
     const bbox = {
@@ -283,15 +384,15 @@ export class CalloutCanvasLayer extends CanvasLayer {
 
   chooseTopOrBottomPosition(nodes: Callout[], bottom: Callout[], top: Callout[]): void {
     for (let i = nodes.length - 2; i >= 0; --i) {
-      const node = nodes[i];
-      const prevNode = top[0];
+      const node = nodes[i]!;
+      const prevNode = top[0]!;
 
       const overlap = isOverlapping(node.boundingBox, prevNode.boundingBox);
       if (overlap) {
         node.alignment = node.alignment === Location.topleft ? Location.bottomright : Location.bottomleft;
         bottom.push(node);
         if (i > 0) {
-          top.unshift(nodes[--i]);
+          top.unshift(nodes[--i]!);
         }
       } else {
         top.unshift(node);
@@ -301,9 +402,9 @@ export class CalloutCanvasLayer extends CanvasLayer {
 
   adjustTopPositions(top: Callout[]): void {
     for (let i = top.length - 2; i >= 0; --i) {
-      const currentNode = top[i];
+      const currentNode = top[i]!;
       for (let j = top.length - 1; j > i; --j) {
-        const prevNode = top[j];
+        const prevNode = top[j]!;
         const overlap = getOverlapOffset(currentNode.boundingBox, prevNode.boundingBox);
         if (overlap) {
           currentNode.dy += overlap.dy;
@@ -315,9 +416,9 @@ export class CalloutCanvasLayer extends CanvasLayer {
 
   adjustBottomPositions(bottom: Callout[]): void {
     for (let i = bottom.length - 2; i >= 0; --i) {
-      const currentNode = bottom[i];
+      const currentNode = bottom[i]!;
       for (let j = bottom.length - 1; j > i; --j) {
-        const prevNode = bottom[j];
+        const prevNode = bottom[j]!;
         const overlap = getOverlapOffset(prevNode.boundingBox, currentNode.boundingBox);
         if (overlap) {
           currentNode.dy += overlap.dy;

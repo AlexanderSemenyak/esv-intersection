@@ -1,21 +1,26 @@
 import { SurfaceArea, SurfaceData, SurfaceLine } from '../datautils';
-import { GeomodelLayerOptions, OnUpdateEvent, OnRescaleEvent, OnMountEvent } from '../interfaces';
+import { OnUpdateEvent, OnRescaleEvent } from '../interfaces';
 import { colorToCSSColor } from '../utils/color';
+import { LayerOptions } from './base';
 import { CanvasLayer } from './base/CanvasLayer';
 
 const DEFAULT_MAX_DEPTH = 10000;
 
-export class GeomodelCanvasLayer extends CanvasLayer {
-  rescaleEvent: OnRescaleEvent;
+type SurfacePaths = {
+  color: string;
+  path: Path2D;
+};
 
-  // TODO add types for surfaceAreasPaths and surfaceLinesPaths
-  surfaceAreasPaths: any[] = [];
+export class GeomodelCanvasLayer<T extends SurfaceData> extends CanvasLayer<T> {
+  rescaleEvent: OnRescaleEvent | undefined;
 
-  surfaceLinesPaths: any[] = [];
+  surfaceAreasPaths: SurfacePaths[] = [];
+
+  surfaceLinesPaths: SurfacePaths[] = [];
 
   maxDepth: number = DEFAULT_MAX_DEPTH;
 
-  constructor(id?: string, options?: GeomodelLayerOptions) {
+  constructor(id?: string, options?: LayerOptions<T>) {
     super(id, options);
     this.render = this.render.bind(this);
     this.generateSurfaceAreasPaths = this.generateSurfaceAreasPaths.bind(this);
@@ -25,33 +30,13 @@ export class GeomodelCanvasLayer extends CanvasLayer {
     this.updatePaths = this.updatePaths.bind(this);
   }
 
-  get data(): SurfaceData {
-    return super.getData();
-  }
-
-  set data(data: SurfaceData) {
-    this.setData(data);
-  }
-
-  getData(): SurfaceData {
-    return super.getData();
-  }
-
-  setData(data: SurfaceData): void {
-    super.setData(data);
-  }
-
-  onMount(event: OnMountEvent): void {
-    super.onMount(event);
-  }
-
-  onUpdate(event: OnUpdateEvent): void {
+  override onUpdate(event: OnUpdateEvent<T>): void {
     super.onUpdate(event);
     this.updatePaths();
     this.render();
   }
 
-  onRescale(event: OnRescaleEvent): void {
+  override onRescale(event: OnRescaleEvent): void {
     this.rescaleEvent = event;
     this.setTransform(this.rescaleEvent);
     this.render();
@@ -74,8 +59,8 @@ export class GeomodelCanvasLayer extends CanvasLayer {
 
     requestAnimationFrame(() => {
       this.clearCanvas();
-      this.surfaceAreasPaths.forEach((p: any) => this.drawPolygonPath(p.color, p.path));
-      this.surfaceLinesPaths.forEach((l: any) => this.drawLinePath(l.color, l.path));
+      this.surfaceAreasPaths.forEach((p: SurfacePaths) => this.drawPolygonPath(p.color, p.path));
+      this.surfaceLinesPaths.forEach((l: SurfacePaths) => this.drawLinePath(l.color, l.path));
     });
   }
 
@@ -84,65 +69,72 @@ export class GeomodelCanvasLayer extends CanvasLayer {
   }
 
   generateSurfaceAreasPaths(): void {
-    this.surfaceAreasPaths = this.data.areas.reduce((acc: any, s: SurfaceArea) => {
-      const polygons = this.createPolygons(s.data);
-      const mapped = polygons.map((polygon: any) => ({
-        color: this.colorToCSSColor(s.color),
-        path: this.generatePolygonPath(polygon),
-      }));
-      acc.push(...mapped);
-      return acc;
-    }, []);
+    this.surfaceAreasPaths =
+      this.data?.areas.reduce((acc: SurfacePaths[], s: SurfaceArea) => {
+        const polygons = this.createPolygons(s.data);
+        const mapped: SurfacePaths[] = polygons.map((polygon: number[]) => ({
+          color: this.colorToCSSColor(s.color),
+          path: this.generatePolygonPath(polygon),
+        }));
+        acc.push(...mapped);
+        return acc;
+      }, []) ?? [];
   }
 
   generateSurfaceLinesPaths(): void {
-    this.surfaceLinesPaths = this.data.lines.reduce((acc: any, l: SurfaceLine) => {
-      const lines = this.generateLinePaths(l);
-      const mapped = lines.map((path: Path2D) => ({ color: this.colorToCSSColor(l.color), path }));
-      acc.push(...mapped);
-      return acc;
-    }, []);
+    this.surfaceLinesPaths =
+      this.data?.lines.reduce((acc: SurfacePaths[], l: SurfaceLine) => {
+        const lines = this.generateLinePaths(l);
+        const mapped: SurfacePaths[] = lines.map((path: Path2D) => ({ color: this.colorToCSSColor(l.color), path }));
+        acc.push(...mapped);
+        return acc;
+      }, []) ?? [];
   }
 
   drawPolygonPath = (color: string, path: Path2D): void => {
     const { ctx } = this;
-    ctx.fillStyle = color;
-    ctx.fill(path);
+    if (ctx != null) {
+      ctx.fillStyle = color;
+      ctx.fill(path);
+    }
   };
 
   drawLinePath = (color: string, path: Path2D): void => {
     const { ctx } = this;
-    ctx.strokeStyle = color;
-    ctx.stroke(path);
+
+    if (ctx != null) {
+      ctx.strokeStyle = color;
+      ctx.stroke(path);
+    }
   };
 
-  createPolygons = (data: any): number[][] => {
+  createPolygons = (data: number[][]): number[][] => {
     const polygons: number[][] = [];
-    let polygon: number[] = null;
+    let polygon: number[] = [];
 
     // Start generating polygons
     for (let i = 0; i < data.length; i++) {
       // Generate top of polygon as long as we have valid values
-      const topIsValid = !!data[i][1];
+      const topIsValid = !!data[i]?.[1];
       if (topIsValid) {
         if (polygon === null) {
           polygon = [];
         }
-        polygon.push(data[i][0], data[i][1]);
+        polygon.push(data[i]?.[0]!, data[i]?.[1]!);
       }
 
       const endIsReached = i === data.length - 1;
       if (!topIsValid || endIsReached) {
-        if (polygon) {
+        if (polygon.length > 0) {
           // Generate bottom of polygon
           for (let j: number = !topIsValid ? i - 1 : i; j >= 0; j--) {
-            if (!data[j][1]) {
+            if (!data[j]?.[1]) {
               break;
             }
-            polygon.push(data[j][0], data[j][2] || this.maxDepth);
+            polygon.push(data[j]?.[0]!, data[j]?.[2] || this.maxDepth);
           }
           polygons.push(polygon);
-          polygon = null;
+          polygon = [];
         }
       }
     }
@@ -153,36 +145,36 @@ export class GeomodelCanvasLayer extends CanvasLayer {
   generatePolygonPath = (polygon: number[]): Path2D => {
     const path = new Path2D();
 
-    path.moveTo(polygon[0], polygon[1]);
+    path.moveTo(polygon[0]!, polygon[1]!);
     for (let i = 2; i < polygon.length; i += 2) {
-      path.lineTo(polygon[i], polygon[i + 1]);
+      path.lineTo(polygon[i]!, polygon[i + 1]!);
     }
     path.closePath();
 
     return path;
   };
 
-  generateLinePaths = (s: any): Path2D[] => {
+  generateLinePaths = (s: SurfaceLine): Path2D[] => {
     const paths: Path2D[] = [];
     const { data: d } = s;
 
     let penDown = false;
-    let path = null;
+    let path: Path2D | undefined;
     for (let i = 0; i < d.length; i++) {
-      if (d[i][1]) {
-        if (penDown) {
-          path.lineTo(d[i][0], d[i][1]);
+      if (d[i]?.[1]) {
+        if (penDown && path) {
+          path.lineTo(d[i]?.[0]!, d[i]?.[1]!);
         } else {
           path = new Path2D();
-          path.moveTo(d[i][0], d[i][1]);
+          path.moveTo(d[i]?.[0]!, d[i]?.[1]!);
           penDown = true;
         }
-      } else if (penDown) {
+      } else if (penDown && path) {
         paths.push(path);
         penDown = false;
       }
     }
-    if (penDown) {
+    if (penDown && path) {
       paths.push(path);
     }
 
